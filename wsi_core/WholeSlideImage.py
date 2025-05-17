@@ -674,6 +674,7 @@ class WholeSlideImage(object):
        
         return img
 
+
     def block_blending(self, img, vis_level, top_left, bot_right, alpha=0.5, blank_canvas=False, block_size=1024):
         print('\ncomputing blend')
         downsample = self.level_downsamples[vis_level]
@@ -683,44 +684,54 @@ class WholeSlideImage(object):
         block_size_y = min(block_size, h)
         print('using block size: {} x {}'.format(block_size_x, block_size_y))
 
-        shift = top_left  # amount shifted w.r.t. (0,0)
-
+        shift = top_left # amount shifted w.r.t. (0,0)
         for x_start in range(top_left[0], bot_right[0], block_size_x * int(downsample[0])):
             for y_start in range(top_left[1], bot_right[1], block_size_y * int(downsample[1])):
+                #print(x_start, y_start)
+
+                # 1. convert wsi coordinates to image coordinates via shift and scale
                 x_start_img = int((x_start - shift[0]) / int(downsample[0]))
                 y_start_img = int((y_start - shift[1]) / int(downsample[1]))
 
-                y_end_img = min(h, y_start_img + block_size_y)
-                x_end_img = min(w, x_start_img + block_size_x)
+                # 2. compute end points of blend tile, careful not to go over the edge of the image
+                y_end_img = min(h, y_start_img+block_size_y)
+                x_end_img = min(w, x_start_img+block_size_x)
 
+                # if y_end_img == y_start_img or x_end_img == x_start_img:
+                #     continue
+                #print('start_coord: {} end_coord: {}'.format((x_start_img, y_start_img), (x_end_img, y_end_img)))
                 if y_end_img <= y_start_img or x_end_img <= x_start_img:
-                    print(f"[SKIP] Invalid block size: x=({x_start_img},{x_end_img}) y=({y_start_img},{y_end_img})")
+                    print(f"[SKIP] Invalid block: x=({x_start_img},{x_end_img}), y=({y_start_img},{y_end_img})")
                     continue
 
+                # 3. fetch blend block and size
                 blend_block = img[y_start_img:y_end_img, x_start_img:x_end_img]
-                blend_block_size = (x_end_img - x_start_img, y_end_img - y_start_img)
+                blend_block_size = (x_end_img-x_start_img, y_end_img-y_start_img)
 
                 if not blank_canvas:
                     pt = (x_start, y_start)
-                    # debug
                     safe_blend_block_size = (
-                        max(1, blend_block_size[0]),
-                        max(1, blend_block_size[1])
+                        max(1, int(blend_block_size[0] * downsample[0])),
+                        max(1, int(blend_block_size[1] * downsample[1]))
                     )
                     try:
                         canvas = np.array(
                             self.wsi.read_region(pt, vis_level, safe_blend_block_size).convert("RGB")
                         )
+                        canvas = canvas[:blend_block.shape[0], :blend_block.shape[1], :]
                     except Exception as e:
                         print(f"[WARNING] read_region failed at {pt} with size {safe_blend_block_size}, reason: {e}")
-                        canvas = np.zeros((safe_blend_block_size[1], safe_blend_block_size[0], 3), dtype=np.uint8)
+                        canvas = np.zeros((blend_block.shape[0], blend_block.shape[1], 3), dtype=np.uint8)
+
+                    # # 4. read actual wsi block as canvas block
+                    # pt = (x_start, y_start)
+                    # canvas = np.array(self.wsi.read_region(pt, vis_level, blend_block_size).convert("RGB"))
                 else:
-                    canvas = np.array(Image.new(size=blend_block_size, mode="RGB", color=(255, 255, 255)))
+                    # 4. OR create blank canvas block
+                    canvas = np.array(Image.new(size=blend_block_size, mode="RGB", color=(255,255,255)))
 
-                img[y_start_img:y_end_img, x_start_img:x_end_img] = cv2.addWeighted(
-                    blend_block, alpha, canvas, 1 - alpha, 0, canvas
-                )
-
+                # 5. blend color block and canvas block
+                img[y_start_img:y_end_img, x_start_img:x_end_img] = cv2.addWeighted(blend_block, alpha, canvas, 1 - alpha, 0, canvas)
         return img
 
     def get_seg_mask(self, region_size, scale, use_holes=False, offset=(0,0)):
