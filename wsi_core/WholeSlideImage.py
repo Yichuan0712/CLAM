@@ -674,47 +674,47 @@ class WholeSlideImage(object):
        
         return img
 
+    def block_blending(self, img, vis_level, top_left, bot_right,
+                       alpha=0.5, blank_canvas=False, block_size=1024):
 
-    def block_blending(self, img, vis_level, top_left, bot_right, alpha=0.5, blank_canvas=False, block_size=1024):
-        print('\ncomputing blend')
-        downsample = self.level_downsamples[vis_level]
-        w = img.shape[1]
-        h = img.shape[0]
-        block_size_x = min(block_size, w)
-        block_size_y = min(block_size, h)
-        print('using block size: {} x {}'.format(block_size_x, block_size_y))
+        downsample = self.level_downsamples[vis_level]  # (dx, dy)
+        h, w = img.shape[:2]
+        bx = min(block_size, w)  # tile 宽
+        by = min(block_size, h)  # tile 高
 
-        shift = top_left # amount shifted w.r.t. (0,0)
-        for x_start in range(top_left[0], bot_right[0], block_size_x * int(downsample[0])):
-            for y_start in range(top_left[1], bot_right[1], block_size_y * int(downsample[1])):
-                #print(x_start, y_start)
+        shift_x, shift_y = top_left  # level-0 坐标偏移
 
-                # 1. convert wsi coordinates to image coordinates via shift and scale
-                x_start_img = int((x_start - shift[0]) / int(downsample[0]))
-                y_start_img = int((y_start - shift[1]) / int(downsample[1]))
+        for xs in range(top_left[0], bot_right[0], int(bx * downsample[0])):
+            for ys in range(top_left[1], bot_right[1], int(by * downsample[1])):
 
-                # 2. compute end points of blend tile, careful not to go over the edge of the image
-                y_end_img = min(h, y_start_img+block_size_y)
-                x_end_img = min(w, x_start_img+block_size_x)
-
-                if y_end_img == y_start_img or x_end_img == x_start_img:
+                # ----- 把 level-0 坐标映射到“当前 level”像素 -----
+                xi = int((xs - shift_x) / downsample[0])
+                yi = int((ys - shift_y) / downsample[1])
+                xe = min(w, xi + bx)
+                ye = min(h, yi + by)
+                if xe <= xi or ye <= yi:  # 空块，跳过
                     continue
-                #print('start_coord: {} end_coord: {}'.format((x_start_img, y_start_img), (x_end_img, y_end_img)))
 
-                # 3. fetch blend block and size
-                blend_block = img[y_start_img:y_end_img, x_start_img:x_end_img]
-                blend_block_size = (x_end_img-x_start_img, y_end_img-y_start_img)
+                blend_block = img[yi:ye, xi:xe]
+                # ----------- 关键：size 用 level-0 尺寸 ------------
+                req_w = int((xe - xi) * downsample[0])
+                req_h = int((ye - yi) * downsample[1])
+                size0 = (max(1, req_w), max(1, req_h))  # 安全保证 >=1
 
-                if not blank_canvas:
-                    # 4. read actual wsi block as canvas block
-                    pt = (x_start, y_start)
-                    canvas = np.array(self.wsi.read_region(pt, vis_level, blend_block_size).convert("RGB"))
+                if blank_canvas:
+                    canvas = np.full(blend_block.shape, 255, np.uint8)
                 else:
-                    # 4. OR create blank canvas block
-                    canvas = np.array(Image.new(size=blend_block_size, mode="RGB", color=(255,255,255)))
+                    try:
+                        canvas = np.array(
+                            self.wsi.read_region((xs, ys), vis_level, size0)
+                            .convert("RGB")
+                        )[:blend_block.shape[0], :blend_block.shape[1], :]
+                    except openslide.OpenSlideError:
+                        canvas = np.zeros_like(blend_block)
 
-                # 5. blend color block and canvas block
-                img[y_start_img:y_end_img, x_start_img:x_end_img] = cv2.addWeighted(blend_block, alpha, canvas, 1 - alpha, 0, canvas)
+                img[yi:ye, xi:xe] = cv2.addWeighted(
+                    blend_block, alpha, canvas, 1 - alpha, 0)
+
         return img
 
     def get_seg_mask(self, region_size, scale, use_holes=False, offset=(0,0)):
