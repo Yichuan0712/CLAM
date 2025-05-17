@@ -697,35 +697,18 @@ class WholeSlideImage(object):
                 y_end_img = min(h, y_start_img+block_size_y)
                 x_end_img = min(w, x_start_img+block_size_x)
 
-                # if y_end_img == y_start_img or x_end_img == x_start_img:
-                #     continue
-                #print('start_coord: {} end_coord: {}'.format((x_start_img, y_start_img), (x_end_img, y_end_img)))
-                if y_end_img <= y_start_img or x_end_img <= x_start_img:
-                    print(f"[SKIP] Invalid block: x=({x_start_img},{x_end_img}), y=({y_start_img},{y_end_img})")
+                if y_end_img == y_start_img or x_end_img == x_start_img:
                     continue
+                #print('start_coord: {} end_coord: {}'.format((x_start_img, y_start_img), (x_end_img, y_end_img)))
 
                 # 3. fetch blend block and size
                 blend_block = img[y_start_img:y_end_img, x_start_img:x_end_img]
                 blend_block_size = (x_end_img-x_start_img, y_end_img-y_start_img)
 
                 if not blank_canvas:
+                    # 4. read actual wsi block as canvas block
                     pt = (x_start, y_start)
-                    safe_blend_block_size = (
-                        max(1, blend_block_size[0]),
-                        max(1, blend_block_size[1])
-                    )
-                    try:
-                        canvas = np.array(
-                            self.wsi.read_region(pt, vis_level, safe_blend_block_size).convert("RGB")
-                        )
-                        canvas = canvas[:blend_block.shape[0], :blend_block.shape[1], :]
-                    except Exception as e:
-                        print(f"[WARNING] read_region failed at {pt} with size {safe_blend_block_size}, reason: {e}")
-                        canvas = np.zeros((blend_block.shape[0], blend_block.shape[1], 3), dtype=np.uint8)
-
-                    # # 4. read actual wsi block as canvas block
-                    # pt = (x_start, y_start)
-                    # canvas = np.array(self.wsi.read_region(pt, vis_level, blend_block_size).convert("RGB"))
+                    canvas = np.array(self.wsi.read_region(pt, vis_level, blend_block_size).convert("RGB"))
                 else:
                     # 4. OR create blank canvas block
                     canvas = np.array(Image.new(size=blend_block_size, mode="RGB", color=(255,255,255)))
