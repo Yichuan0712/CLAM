@@ -711,8 +711,8 @@ class WholeSlideImage(object):
                 if not blank_canvas:
                     pt = (x_start, y_start)
                     safe_blend_block_size = (
-                        max(1, int(blend_block_size[0] * downsample[0])),
-                        max(1, int(blend_block_size[1] * downsample[1]))
+                        max(1, blend_block_size[0]),
+                        max(1, blend_block_size[1])
                     )
                     try:
                         canvas = np.array(
@@ -731,7 +731,7 @@ class WholeSlideImage(object):
                     canvas = np.array(Image.new(size=blend_block_size, mode="RGB", color=(255,255,255)))
 
                 # 5. blend color block and canvas block
-                img[y_start_img:y_end_img, x_start_img:x_end_img] = cv2.addWeighted(blend_block, alpha, canvas, 1 - alpha, 0)
+                img[y_start_img:y_end_img, x_start_img:x_end_img] = cv2.addWeighted(blend_block, alpha, canvas, 1 - alpha, 0, canvas)
         return img
 
     def get_seg_mask(self, region_size, scale, use_holes=False, offset=(0,0)):
